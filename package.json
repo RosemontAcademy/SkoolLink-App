@@ -1,0 +1,47 @@
+{
+  "name": "skoollink-app",
+  "productName": "SkoolLink",
+  "version": "1.0.0",
+  "description": "SkoolLink desktop shell — Rosemont Academy admin console",
+  "main": "src/main.js",
+  "author": "Rosemont Academy",
+  "license": "UNLICENSED",
+  "repository": "github:RosemontAcademy/SkoolLink-App",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node scripts/make-ico.mjs",
+    "dist": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "kr.rosemont.skoollink",
+    "productName": "SkoolLink",
+    "artifactName": "SkoolLink-Setup-${version}.${ext}",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "!assets/ico/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "SkoolLink",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "RosemontAcademy",
+      "repo": "SkoolLink-App"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>SkoolLink — 연결 끊김</title>
+  <style>
+    body {
+      margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b;
+    }
+    .card { text-align: center; padding: 48px; }
+    .emoji { font-size: 48px; }
+    h1 { font-size: 20px; margin: 16px 0 8px; }
+    p { font-size: 14px; color: #64748b; margin: 0 0 24px; }
+    button {
+      padding: 10px 24px; border: 0; border-radius: 12px; background: #4f46e5; color: white;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    button:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="emoji">📡</div>
+    <h1>인터넷 연결을 확인해 주세요</h1>
+    <p>연결되면 자동으로 다시 시도합니다 (<span id="count">15</span>초)</p>
+    <button onclick="retry()">지금 다시 시도</button>
+  </div>
+  <script>
+    const APP_URL = 'https://skoollink-eosin.vercel.app';
+    function retry() { location.replace(APP_URL); }
+    let left = 15;
+    setInterval(() => {
+      left -= 1;
+      if (left <= 0) retry();
+      document.getElementById('count').textContent = left;
+    }, 1000);
+  </script>
+</body>
+</html>

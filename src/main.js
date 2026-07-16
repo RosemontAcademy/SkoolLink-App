@@ -9,6 +9,10 @@ const path = require('path');
 const APP_URL = 'https://skoollink-eosin.vercel.app';
 const ASSETS = path.join(__dirname, '..', 'assets');
 
+// 신청알림 등에서 앱으로 바로 여는 딥링크 스킴. skoollink://admin/dashboard?day=3&q=이름
+// → https://skoollink-eosin.vercel.app/admin/dashboard?day=3&q=이름 으로 열어준다.
+const DEEP_LINK_SCHEME = 'skoollink';
+
 // Hosts allowed to load inside the app window/popups. Everything else opens in
 // the default browser. Google OAuth must never stay inside Electron because
 // Google rejects embedded user agents on managed/new Windows installs.
@@ -38,14 +42,29 @@ function isInternalUrl(url) {
 let win = null;
 let tray = null;
 let isQuitting = false;
+// 창이 생기기 전에 도착한 딥링크(콜드 스타트·macOS open-url)를 버퍼링했다가 창이 뜨면 연다.
+let pendingDeepLink = null;
 
 const startHidden = process.argv.includes('--hidden');
+
+// macOS는 딥링크가 open-url 이벤트로 온다(앱이 꺼져 있으면 whenReady 이전에 올 수도 있어
+// 락 획득 여부와 무관하게 바깥에서 먼저 등록한다).
+app.on('open-url', (e, url) => {
+  e.preventDefault();
+  handleDeepLink(url);
+});
 
 // Second launch (e.g. desktop icon while running in tray) surfaces the window.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => showWindow());
+  // 앱이 이미 떠 있는데 두 번째 실행(딥링크 클릭·바로가기)되면 Windows/Linux는 그 argv로
+  // skoollink:// URL이 넘어온다 — 집어서 처리하고 창을 띄운다.
+  app.on('second-instance', (_e, argv) => {
+    const link = argv.find(a => typeof a === 'string' && a.toLowerCase().startsWith(DEEP_LINK_SCHEME + '://'));
+    if (link) handleDeepLink(link);
+    showWindow();
+  });
 
   // Google rejects OAuth from user agents that advertise an embedded shell
   // (disallowed_useragent) — present as plain Chrome.
@@ -54,8 +73,12 @@ if (!app.requestSingleInstanceLock()) {
     .replace(/\sElectron\/[\d.]+/, '');
 
   app.whenReady().then(() => {
-    // Must match build.appId or Windows toasts show no app name/icon.
-    app.setAppUserModelId('kr.rosemont.skoollink');
+    registerDeepLinkClient();
+    // Windows 전용 — 다른 OS에선 no-op이라 무해하지만 명시적으로 가둔다.
+    if (process.platform === 'win32') app.setAppUserModelId('kr.rosemont.skoollink');
+    // 콜드 스타트가 딥링크로 시작된 경우(Windows/Linux) launch argv에서 집어낸다.
+    const launchLink = process.argv.find(a => typeof a === 'string' && a.toLowerCase().startsWith(DEEP_LINK_SCHEME + '://'));
+    if (launchLink) handleDeepLink(launchLink);
     createWindow();
     createTray();
     setupAutoUpdate();
@@ -65,6 +88,8 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => { isQuitting = true; });
+  // macOS: 독 아이콘 클릭 시 트레이/독에 숨어 있던 창을 다시 띄운다.
+  app.on('activate', () => showWindow());
 }
 
 function openExternalUrl(url) {
@@ -83,6 +108,34 @@ function showWindow() {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+// OS에 skoollink:// 스킴 핸들러로 등록한다(설치 시 electron-builder의 build.protocols가
+// 기본 등록하지만, 개발 실행·재확정을 위해 런타임에서도 등록).
+function registerDeepLinkClient() {
+  try {
+    if (process.defaultApp) {
+      // electron으로 직접 실행하는 개발 모드: 스킴을 이 스크립트로 연결하려면 실행 경로+엔트리를 넘긴다.
+      if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
+      }
+    } else {
+      app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
+    }
+  } catch { /* 등록 실패해도 앱 구동엔 지장 없음 */ }
+}
+
+// skoollink://admin/dashboard?day=3&q=이름  →  APP_URL/admin/dashboard?day=3&q=이름 로 이동.
+// 스킴 뒤 경로·쿼리만 우리 도메인에 그대로 이어붙이므로 항상 앱 자신의 origin 안에 머문다.
+function handleDeepLink(url) {
+  if (typeof url !== 'string') return;
+  const prefix = DEEP_LINK_SCHEME + '://';
+  if (!url.toLowerCase().startsWith(prefix)) return;
+  const rest = url.slice(prefix.length).replace(/^\/+/, ''); // "admin/dashboard?day=3&q=…"
+  const target = `${APP_URL}/${rest}`;
+  if (!win) { pendingDeepLink = target; return; } // 창 생성 전이면 버퍼링 → createWindow에서 로드
+  win.loadURL(target);
+  showWindow();
 }
 
 function createWindow() {
@@ -106,7 +159,9 @@ function createWindow() {
     win.webContents.on('did-navigate-in-page', (_e, url) => console.log('[nav-spa]', url));
   }
 
-  win.loadURL(APP_URL);
+  // 딥링크로 켜졌으면 그 대상 URL을 바로 연다(없으면 대시보드 루트).
+  win.loadURL(pendingDeepLink || APP_URL);
+  pendingDeepLink = null;
 
   // Close = hide to tray (ChannelTalk behavior). Real quit is the tray menu.
   win.on('close', (e) => {
@@ -156,18 +211,22 @@ function createWindow() {
   });
 }
 
-// ── Taskbar unread badge ─────────────────────────────────────────────────────
-// Windows has no Badging API; the web app sends its unacknowledged route-change
-// count through the preload bridge and we pin a numbered overlay on the taskbar icon.
+// ── Unread badge ─────────────────────────────────────────────────────────────
+// 웹 앱이 미확인 노선변경 건수를 preload 브릿지로 넘겨주면 배지로 표시한다.
+//  · Windows: Badging API가 없어 작업표시줄 아이콘에 숫자 오버레이 png를 얹는다(창 필요).
+//  · macOS: 독 아이콘에 숫자 배지를 찍는다(창이 숨어 있어도 동작).
 function setBadge(count) {
-  if (!win) return;
-  const n = Math.max(0, Math.floor(count));
-  if (n > 0) {
-    const name = n > 9 ? '9plus' : String(n);
-    const icon = nativeImage.createFromPath(path.join(ASSETS, 'overlay', `overlay-${name}.png`));
-    win.setOverlayIcon(icon, `노선변경 미확인 ${n}건`);
-  } else {
-    win.setOverlayIcon(null, '');
+  const n = Math.max(0, Math.floor(count || 0));
+  if (process.platform === 'darwin') {
+    if (app.dock) app.dock.setBadge(n > 0 ? String(n) : '');
+  } else if (win) {
+    if (n > 0) {
+      const name = n > 9 ? '9plus' : String(n);
+      const icon = nativeImage.createFromPath(path.join(ASSETS, 'overlay', `overlay-${name}.png`));
+      win.setOverlayIcon(icon, `노선변경 미확인 ${n}건`);
+    } else {
+      win.setOverlayIcon(null, '');
+    }
   }
   if (tray) tray.setToolTip(n > 0 ? `SkoolLink — 노선변경 미확인 ${n}건` : 'SkoolLink');
 }

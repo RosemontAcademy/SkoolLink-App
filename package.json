@@ -1,7 +1,7 @@
 {
   "name": "skoollink-app",
   "productName": "SkoolLink",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "SkoolLink desktop shell — Rosemont Academy admin console",
   "main": "src/main.js",
   "author": "Rosemont Academy",
@@ -10,7 +10,9 @@
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/make-ico.mjs",
-    "dist": "electron-builder --win --publish never"
+    "dist": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:mac:publish": "electron-builder --mac --publish always"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
@@ -23,6 +25,14 @@
     "appId": "kr.rosemont.skoollink",
     "productName": "SkoolLink",
     "artifactName": "SkoolLink-Setup-${version}.${ext}",
+    "protocols": [
+      {
+        "name": "SkoolLink",
+        "schemes": [
+          "skoollink"
+        ]
+      }
+    ],
     "files": [
       "src/**/*",
       "assets/**/*",
@@ -37,6 +47,26 @@
       "perMachine": false,
       "shortcutName": "SkoolLink",
       "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "universal"
+        },
+        {
+          "target": "zip",
+          "arch": "universal"
+        }
+      ],
+      "category": "public.app-category.education",
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "artifactName": "SkoolLink-${version}-${arch}.${ext}"
     },
     "publish": {
       "provider": "github",
